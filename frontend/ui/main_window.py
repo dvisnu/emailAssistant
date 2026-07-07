@@ -48,6 +48,10 @@ class MainWindow(QWidget):
 
         self.setLayout(layout)
 
+
+    def set_input_text(self, text):
+        self.inputbox.setPlainText(text)
+
     def set_buttons_enabled(self, enabled):
         self.rewrite_button.setEnabled(enabled)
         self.grammar_button.setEnabled(enabled)

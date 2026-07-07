@@ -1,42 +1,31 @@
-"""Smoke tests for the prompt registry.
-
-These do not call any LLM — they only verify that every registered action has
-a builder function producing non-empty output for valid inputs.
-"""
-
-import pytest
+"""Smoke tests for the prompt registry."""
 
 from backend.prompts.registry import PROMPTS
 
 
-@pytest.mark.no_server
 class TestPromptRegistry:
     """Each registered action produces a prompt."""
 
-    def test_all_actions_have_builder(self):
-        """PROMPTS dict is not empty and every value is callable."""
-        assert PROMPTS, "PROMPTS registry is empty — forgot to register a new action?"
-        for name, fn in PROMPTS.items():
-            assert callable(fn), f"PROMPTS[{name!r}] is not callable"
+    def test_registry_contains_expected_actions(self):
+        """The current project exposes the expected actions."""
+        assert set(PROMPTS) == {"grammar", "rewrite", "professional"}
+
+    def test_each_registered_builder_is_callable(self):
+        """Every entry in the registry should be a callable prompt builder."""
+        for name, builder in PROMPTS.items():
+            assert callable(builder), f"PROMPTS[{name!r}] is not callable"
 
     def test_each_builder_returns_text(self):
-        """Every builder produces a non-empty prompt string."""
+        """Every builder should return a non-empty prompt string."""
         sample = "the quick brown fox jumps"
-        for name, fn in PROMPTS.items():
-            prompt = fn(sample)
-            assert prompt.strip(), f"Prompts[{name!r}] returned empty prompt"
+        for name, builder in PROMPTS.items():
+            prompt = builder(sample)
+            assert isinstance(prompt, str), f"PROMPTS[{name!r}] should return a string"
+            assert prompt.strip(), f"PROMPTS[{name!r}] returned an empty prompt"
 
-    def test_grammar_has_instructions(self):
-        """Grammar prompt includes instruction-like keywords (sanity check)."""
-        prompt = PROMPTS["grammar"]("test sentence here")
-        assert len(prompt) > 50  # a real instruction, not a one-liner
-
-    def test_rewrite_has_instructions(self):
-        """Rewrite prompt includes instruction-like keywords."""
-        prompt = PROMPTS["rewrite"]("rewrite this")
-        assert len(prompt) > 50
-
-    def test_professional_has_instructions(self):
-        """Professional prompt includes instruction-like keywords."""
-        prompt = PROMPTS["professional"]("hey what's up")
-        assert len(prompt) > 50
+    def test_prompt_contains_the_input_text(self):
+        """Prompt builders should preserve the user's text in the generated prompt."""
+        sample = "the quick brown fox jumps"
+        assert sample in PROMPTS["grammar"](sample)
+        assert sample in PROMPTS["rewrite"](sample)
+        assert sample in PROMPTS["professional"](sample)

@@ -1,13 +1,19 @@
 from pynput import keyboard
+from PyQt6.QtCore import QObject, pyqtSignal
 
 
-class HotkeyService:
-    def __init__(self, callback):
-        self.callback = callback
+class HotkeyService(QObject):
+    hotkey_pressed = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
 
         self.listener = keyboard.GlobalHotKeys({
-            "<ctrl>+<shift>+<space>": self.callback
+            "<f8>": self._on_hotkey
         })
+
+    def _on_hotkey(self):
+        self.hotkey_pressed.emit()
 
     def start(self):
         self.listener.start()
