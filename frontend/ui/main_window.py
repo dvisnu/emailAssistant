@@ -1,6 +1,11 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QPlainTextEdit
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QPushButton,
+    QPlainTextEdit,
+    QLabel,
+)
 from PyQt6.QtCore import QThread
-
 from services.api_client import ApiClient
 from worker.api_worker import ApiWorker
 
@@ -20,12 +25,21 @@ class MainWindow(QWidget):
         self.grammar_button = QPushButton("Correct Grammar")
         self.professional_button = QPushButton("Make It Professional")
 
+        self.inputbox = QPlainTextEdit()
+        self.inputbox.setPlaceholderText("Selected text will appear here...")
+        self.inputbox.setReadOnly(True)
+
         self.outputbox = QPlainTextEdit()
         self.outputbox.setReadOnly(True)
 
         layout.addWidget(self.rewrite_button)
         layout.addWidget(self.grammar_button)
         layout.addWidget(self.professional_button)
+
+        layout.addWidget(QLabel("Input"))
+        layout.addWidget(self.inputbox)
+
+        layout.addWidget(QLabel("Output"))
         layout.addWidget(self.outputbox)
 
         self.rewrite_button.clicked.connect(self.rewrite_clicked)
@@ -33,6 +47,10 @@ class MainWindow(QWidget):
         self.professional_button.clicked.connect(self.professional_clicked)
 
         self.setLayout(layout)
+
+
+    def set_input_text(self, text):
+        self.inputbox.setPlainText(text)
 
     def set_buttons_enabled(self, enabled):
         self.rewrite_button.setEnabled(enabled)
@@ -49,7 +67,11 @@ class MainWindow(QWidget):
         self.start_generation("professional")
 
     def start_generation(self, action):
-        text = "thjis is a sampel text with some erors."
+        text = self.inputbox.toPlainText()
+
+        if not text.strip():
+            self.outputbox.setPlainText("Please enter or select some text first.")
+            return
 
         self.set_buttons_enabled(False)
         self.outputbox.setPlainText("Generating...")
@@ -59,7 +81,7 @@ class MainWindow(QWidget):
         self.worker = ApiWorker(
             self.api_client,
             action,
-            text
+            text,
         )
 
         self.worker.moveToThread(self.thread)
@@ -86,4 +108,3 @@ class MainWindow(QWidget):
     def on_generation_error(self, error):
         self.outputbox.setPlainText(error)
         self.set_buttons_enabled(True)
-

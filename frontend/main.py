@@ -1,12 +1,12 @@
 import sys
 
 from PyQt6.QtWidgets import QApplication
-from ui.main_window import MainWindow
-
+from controller.application_controller import ApplicationController
 
 app = QApplication(sys.argv)
 
-window = MainWindow()
-window.show()
+controller = ApplicationController(app)
+
+controller.start()
 
 sys.exit(app.exec())

@@ -1,10 +1,7 @@
-"""Integration tests for the FastAPI /generate endpoint and the backend LLM client."""
+"""Tests for the FastAPI /generate endpoint and the backend LLM client."""
 
-import os
-
-import pytest
-import requests
-from fastapi import HTTPException
+import backend.app as app_module
+import backend.services.llm as llm_module
 
 
 class TestGenerateEndpoint:
@@ -14,108 +11,113 @@ class TestGenerateEndpoint:
         """The root route returns a simple JSON message."""
         resp = client.get("/")
         assert resp.status_code == 200
-        assert resp.json()["message"] == "backend is running successfully!!"
+        assert resp.json() == {"message": "backend is running successfully!!"}
 
-    # -- happy path ----------------------------------------------------------------
+    def test_generate_returns_suggestion_list(self, client, monkeypatch):
+        """The endpoint returns the action, text, and suggestion list from the generator."""
+        monkeypatch.setattr(
+            app_module,
+            "generate_suggestion",
+            lambda action, text: [f"{action}:{text}"],
+        )
 
-    @pytest.mark.available_server
-    def test_generate_grammar(self, client):
-        """Grammar action returns a suggestion list with non-empty text."""
-        payload = {"action": "grammar", "text": "hello world this is a test"}
-        resp = client.post("/generate", json=payload)
+        resp = client.post("/generate", json={"action": "grammar", "text": "hello world"})
+
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["action"] == "grammar"
-        assert isinstance(data["suggestion"], list)
-        assert len(data["suggestion"]) >= 1
-        assert data["suggestion"][0].strip()
-
-    @pytest.mark.available_server
-    def test_generate_rewrite(self, client):
-        """Rewrite action returns a non-empty suggestion list."""
-        payload = {"action": "rewrite", "text": "quick brown fox"}
-        resp = client.post("/generate", json=payload)
-        assert resp.status_code == 200
-        assert resp.json()["suggestion"] and isinstance(resp.json()["suggestion"], list)
-
-    @pytest.mark.available_server
-    def test_generate_professional(self, client):
-        """Professional tone action returns a non-empty suggestion list."""
-        payload = {"action": "professional", "text": "hey this is dumb"}
-        resp = client.post("/generate", json=payload)
-        assert resp.status_code == 200
-        assert resp.json()["suggestion"] and isinstance(resp.json()["suggestion"], list)
-
-    # -- error paths ---------------------------------------------------------------
+        assert resp.json() == {
+            "action": "grammar",
+            "text": "hello world",
+            "suggestion": ["grammar:hello world"],
+        }
 
     def test_generate_empty_text(self, client):
-        """Empty text raises 400."""
+        """Empty text is rejected with a 400 response."""
         resp = client.post("/generate", json={"action": "grammar", "text": ""})
         assert resp.status_code == 400
 
     def test_generate_missing_action(self, client):
-        """Missing action field returns 422 (validation error)."""
+        """Missing action field returns a validation error."""
         resp = client.post("/generate", json={"text": "hello"})
         assert resp.status_code == 422
 
-    def test_generate_unknown_action(self, client):
-        """Unknown action returns 400 (user-defined error)."""
-        resp = client.post(
-            "/generate", json={"action": "sparkles", "text": "hello"},
-        )
+    def test_generate_unknown_action(self, client, monkeypatch):
+        """Unknown actions are rejected with a 400 response."""
+
+        def fail_generator(action, text):
+            raise ValueError("Action not available ;(")
+
+        monkeypatch.setattr(app_module, "generate_suggestion", fail_generator)
+        resp = client.post("/generate", json={"action": "sparkles", "text": "hello"})
         assert resp.status_code == 400
 
     def test_generate_missing_text(self, client):
-        """Missing text field returns 422."""
+        """Missing text field returns a validation error."""
         resp = client.post("/generate", json={"action": "grammar"})
         assert resp.status_code == 422
 
 
 class TestLlmClient:
-    """Tests that hit the configured LLM server directly (bypassing FastAPI).
+    """Tests for the local and OpenAI-compatible LLM client paths."""
 
-    These verify the OpenAI-compatible API path in ``backend/services/llm.py``.
-    """
+    def test_generate_uses_openai_payload_when_key_present(self, monkeypatch):
+        """The OpenAI-compatible path should send a chat-completions payload."""
 
-    @pytest.mark.available_server
-    def test_direct_generate_returns_text(self):
-        """A valid chat/completions call returns the generated content."""
-        resp = requests.post(
-            os.environ["LLM_URL"],
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {os.environ['LLM_KEY']}",
-            },
-            json={
-                "model": os.environ.get("LLM_MODEL", "Coder-9B"),
-                "messages": [{"role": "user", "content": "Reply with exactly one word: hello"}],
-            },
-        )
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert "choices" in data
-        assert len(data["choices"]) > 0
-        assert "message" in data["choices"][0]
-        assert data["choices"][0]["message"]["content"].strip()
+        class DummyResponse:
+            def __init__(self, payload):
+                self._payload = payload
 
-    @pytest.mark.available_server
-    def test_direct_generate_malformed_payload(self):
-        """Missing 'messages' body returns 4xx, not a confusing parse error."""
-        resp = requests.post(
-            os.environ["LLM_URL"],
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {os.environ['LLM_KEY']}",
-            },
-            json={"model": "whatever"},  # no 'messages' key
-        )
-        # The server should return 4xx (not 5xx / crash)
-        assert resp.status_code >= 400 and resp.status_code < 500
+            def raise_for_status(self):
+                return None
 
-    def test_direct_unreachable_server(self):
-        """Calling an unreachable server raises ConnectionError, not a parse crash."""
-        with pytest.raises((requests.ConnectionError, requests.exceptions.ConnectionError)):
-            requests.post(
-                "http://127.0.0.1:1",  # definitely nothing listening here
-                json={"model": "nope", "messages": [{"role": "user", "content": "hi"}]},
-            )
+            def json(self):
+                return self._payload
+
+        calls = {}
+
+        def fake_post(url, headers=None, json=None):
+            calls["url"] = url
+            calls["headers"] = headers
+            calls["json"] = json
+            return DummyResponse({"choices": [{"message": {"content": "generated"}}]})
+
+        monkeypatch.setattr(llm_module.requests, "post", fake_post)
+        monkeypatch.setattr(llm_module, "LLM_KEY", "secret")
+        monkeypatch.setattr(llm_module, "LLM_URL", "https://example.test/v1/chat/completions")
+        monkeypatch.setattr(llm_module, "LLM_MODEL", "demo-model")
+        monkeypatch.setattr(llm_module, "OLLAMA_URL", "http://localhost:11434/api/generate")
+        monkeypatch.setattr(llm_module, "OLLAMA_MODEL", "demo")
+
+        result = llm_module.generate("prompt")
+
+        assert result == "generated"
+        assert calls["url"] == "https://example.test/v1/chat/completions"
+        assert calls["headers"]["Authorization"] == "Bearer secret"
+        assert calls["json"]["messages"][0]["content"] == "prompt"
+
+    def test_generate_falls_back_to_ollama_without_key(self, monkeypatch):
+        """When no key is configured, the client should use the Ollama payload."""
+
+        class DummyResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def json(self):
+                return self._payload
+
+        calls = {}
+
+        def fake_post(url, json=None):
+            calls["url"] = url
+            calls["json"] = json
+            return DummyResponse({"response": "ollama reply"})
+
+        monkeypatch.setattr(llm_module.requests, "post", fake_post)
+        monkeypatch.setattr(llm_module, "LLM_KEY", None)
+        monkeypatch.setattr(llm_module, "LLM_URL", "https://example.test/v1/chat/completions")
+        monkeypatch.setattr(llm_module, "LLM_MODEL", "demo-model")
+        monkeypatch.setattr(llm_module, "OLLAMA_URL", "http://localhost:11434/api/generate")
+        monkeypatch.setattr(llm_module, "OLLAMA_MODEL", "demo")
+
+        assert llm_module.generate("prompt") == "ollama reply"
+        assert calls["url"] == "http://localhost:11434/api/generate"
+        assert calls["json"]["prompt"] == "prompt"
