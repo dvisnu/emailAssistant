@@ -1,6 +1,7 @@
 from ui.main_window import MainWindow
 from services.selection_service import SelectionService
 from services.hotkey_service import HotkeyService
+from PyQt6.QtCore import QTimer
 
 
 class ApplicationController:
@@ -8,7 +9,7 @@ class ApplicationController:
         self.app = app
 
         self.selection_service = SelectionService()
-        self.main_window = MainWindow()
+        self.main_window = MainWindow(self)
 
         self.hotkey_service = HotkeyService()
         self.hotkey_service.hotkey_pressed.connect(self.on_hotkey_pressed)
@@ -25,3 +26,10 @@ class ApplicationController:
         self.main_window.show()
         self.main_window.raise_()
         self.main_window.activateWindow()
+
+    def replace_text(self, text: str):
+        self.main_window.show()
+        QTimer.singleShot(
+            300,
+            lambda : self.selection_service.replace_selected_text(text)
+        )

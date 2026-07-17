@@ -5,14 +5,16 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QLabel,
 )
-from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QThread ,pyqtSignal
 from services.api_client import ApiClient
 from worker.api_worker import ApiWorker
 
 
 class MainWindow(QWidget):
-    def __init__(self):
+    def __init__(self,controller):
         super().__init__()
+
+        self.controller = controller
 
         self.api_client = ApiClient()
 
@@ -32,6 +34,11 @@ class MainWindow(QWidget):
         self.outputbox = QPlainTextEdit()
         self.outputbox.setReadOnly(True)
 
+        self.replace_button = QPushButton("Replace")
+        self.replace_button.setFixedSize(100, 35)
+        self.replace_button.setEnabled(False)
+
+
         layout.addWidget(self.rewrite_button)
         layout.addWidget(self.grammar_button)
         layout.addWidget(self.professional_button)
@@ -42,9 +49,12 @@ class MainWindow(QWidget):
         layout.addWidget(QLabel("Output"))
         layout.addWidget(self.outputbox)
 
+        layout.addWidget(self.replace_button)
+
         self.rewrite_button.clicked.connect(self.rewrite_clicked)
         self.grammar_button.clicked.connect(self.grammar_clicked)
         self.professional_button.clicked.connect(self.professional_clicked)
+        self.replace_button.clicked.connect(self.on_replace_clicked)
 
         self.setLayout(layout)
 
@@ -56,6 +66,7 @@ class MainWindow(QWidget):
         self.rewrite_button.setEnabled(enabled)
         self.grammar_button.setEnabled(enabled)
         self.professional_button.setEnabled(enabled)
+        self.replace_button.setEnabled(enabled)
 
     def rewrite_clicked(self):
         self.start_generation("rewrite")
@@ -101,9 +112,14 @@ class MainWindow(QWidget):
 
         self.thread.start()
 
+    def on_replace_clicked(self):
+        text = self.outputbox.toPlainText()
+        self.controller.replace_text(text)
+
     def on_generation_success(self, result):
         self.outputbox.setPlainText(result["suggestion"][0])
         self.set_buttons_enabled(True)
+    
 
     def on_generation_error(self, error):
         self.outputbox.setPlainText(error)
