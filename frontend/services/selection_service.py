@@ -21,3 +21,20 @@ class SelectionService:
         
         finally:
             clipboard.setText(original_text)
+
+    def replace_selected_text(self,text):
+        clipboard = QApplication.clipboard()
+
+        original_text = clipboard.text()
+        try:
+            clipboard.setText(text)
+            print(text)
+
+            with self.keyboard.pressed(Key.ctrl):
+                self.keyboard.press("v")
+                self.keyboard.release("v")
+            
+            time.sleep(0.1)
+        finally : 
+
+            clipboard.setText(original_text)
